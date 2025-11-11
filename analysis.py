@@ -1,19 +1,19 @@
-# analysis.py — QRT Strategic Analyst (prompts + analysis, KeyError-safe)
+# analysis.py — QRT Strategic Analyst (Template-based, safe)
 
 import os, json
-from collections import defaultdict
 import pandas as pd
 from typing import Dict, Any
+from string import Template
 from openai import OpenAI
 
 # ----------------------------
-# PROMPTS (antes en prompts.py)
+# PROMPTS (usa $placeholders)
 # ----------------------------
 SYSTEM_PROMPT = """You are QRT Strategic Analyst, an expert in utility-scale energy projects (islands & emerging markets).
 Return precise, decision-ready outputs. When data is missing, make realistic, clearly-labelled assumptions.
 Write in concise professional English. Keep structure and JSON schema exactly as requested."""
 
-USER_PROMPT = """Build a strategic analysis for the following project and return ONLY a JSON object with this schema:
+USER_PROMPT = Template("""Build a strategic analysis for the following project and return ONLY a JSON object with this schema:
 {
   "executive_summary": "string",
   "pestel": [{"factor":"Political","points":["..."],"assessment":"..."}],
@@ -27,29 +27,29 @@ USER_PROMPT = """Build a strategic analysis for the following project and return
 }
 
 Context:
-- Country: {country}
-- Technology: {technology}
-- Capacity (MW): {capacity_mw}
-- Client: {client}
-- Offtaker: {offtaker}
-- Horizon: {horizon}
+- Country: $country
+- Technology: $technology
+- Capacity (MW): $capacity_mw
+- Client: $client
+- Offtaker: $offtaker
+- Horizon: $horizon
 
 Additional notes from user:
-{user_context}
+$user_context
 
 Attachments (raw excerpts, if any):
-{attachments}
+$attachments
 
 Requirements:
 - Be specific to the country/technology whenever possible.
 - For PESTEL, give 3–5 bullet points per factor + a brief assessment.
 - For SWOT, keep 4–6 bullets per quadrant.
-- For Risks, include at least 8–12 items spanning: Regulatory, Technical, Financial, Fiscal, Environmental, Logistic, Social/Stakeholder. 
-- Keep probability/impact on a 1–5 scale. 
+- For Risks, include at least 8–12 items spanning: Regulatory, Technical, Financial, Fiscal, Environmental, Logistic, Social/Stakeholder.
+- Keep probability/impact on a 1–5 scale.
 - In legal_fiscal, summarize permits/licensing + typical VAT/Duty + common RE incentives (if applicable).
 - In logistics, cover port clearance days, likely HS-code pitfalls, route surveys, seasonal constraints.
 - End with 6–10 crisp recommendations that are actionable this month.
-"""
+""")
 
 # ---------------------------------
 # OpenAI client (secrets o env var)
@@ -57,7 +57,7 @@ Requirements:
 def _get_openai_key():
     """Busca la API key primero en Streamlit Secrets y luego en variables de entorno."""
     try:
-        from streamlit.runtime.secrets import secrets as st_secrets  # disponible en Streamlit Cloud
+        from streamlit.runtime.secrets import secrets as st_secrets  # en Streamlit Cloud
         key = st_secrets.get("OPENAI_API_KEY")
         if key:
             return key
@@ -100,20 +100,17 @@ def run_strategic_analysis(
                     content = f"[Binary file: {name}, omitted]"
             attachments_txt += f"\n\n### Attachment: {name}\n{content[:5000]}"
 
-    # -------------------------------
-    # Construir prompt (KeyError-safe)
-    # -------------------------------
-    params = defaultdict(str, {
-        "country": country,
-        "technology": technology,
-        "capacity_mw": capacity_mw,
-        "client": client,
-        "offtaker": offtaker,
-        "horizon": horizon,
-        "user_context": user_context,
-        "attachments": attachments_txt,   # ¡nombre exacto!
-    })
-    user_msg = USER_PROMPT.format_map(params)
+    # Construir prompt con Template (evita conflictos con { })
+    user_msg = USER_PROMPT.safe_substitute(
+        country=country,
+        technology=technology,
+        capacity_mw=capacity_mw,
+        client=client,
+        offtaker=offtaker,
+        horizon=horizon,
+        user_context=user_context or "",
+        attachments=attachments_txt or ""
+    )
 
     # Llamada al modelo
     content = call_llm([
