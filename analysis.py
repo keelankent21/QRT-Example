@@ -1,10 +1,23 @@
-
 import os, json
 import pandas as pd
 from typing import Dict, Any
 from prompts import SYSTEM_PROMPT, USER_PROMPT
 from openai import OpenAI
-client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+def _get_openai_key():
+    """Busca la API key primero en Streamlit Secrets y luego en variables de entorno."""
+    # 1) Streamlit Secrets (si está desplegado en Streamlit Cloud)
+    try:
+        from streamlit.runtime.secrets import secrets as st_secrets
+        key = st_secrets.get("OPENAI_API_KEY")
+        if key:
+            return key
+    except Exception:
+        pass
+    # 2) Variable de entorno estándar
+    return os.getenv("OPENAI_API_KEY")
+
+client = OpenAI(api_key=_get_openai_key())
 
 def call_llm(messages: list, temperature: float = 0.2) -> str:
     resp = client.chat.completions.create(
